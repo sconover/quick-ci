@@ -1,0 +1,4 @@
+{
+  "CI_BUCKET": "this-is-the-ci-bucket",
+  "GCP_PROJECT": "this-is-the-gcp-project"
+}
