@@ -14,7 +14,8 @@
   "dependencies": {
     "@google-cloud/debug-agent": "2.3.0",
     "nconf": "0.10.0",
-    "@google-cloud/storage": "^1.5.0"
+    "@google-cloud/storage": "^1.5.0",
+    "request": "^2.81"
   },
   "devDependencies": {
     "@google-cloud/functions-emulator": "^1.0.0-alpha.29"
