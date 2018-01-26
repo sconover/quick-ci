@@ -9,4 +9,6 @@ inbox/git-sha
 
 in the configured GCS bucket.
 
-
+Cloud function logs:
+https://console.cloud.google.com/functions/list
+-> function name -> View Logs
