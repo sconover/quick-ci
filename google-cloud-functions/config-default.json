@@ -1,0 +1,11 @@
+{
+  "BUCKET": "your-gcs-ci-bucket",
+  "GCP_PROJECT": "your-gcp-project",
+  "GITHUB_ACCESS_TOKEN": "your-github-personal-access-token",
+  "CI_INBOX_FOLDER": "ci-inbox",
+  "CI_IN_PROGRESS_FOLDER": "in-progress",
+  "CI_SUCCESS_FOLDER": "success",
+  "CI_FAILURE_FOLDER": "failure",
+  "BUILD_LOG_FOLDER": "ci-build-logs",
+  "GITHUB_STATUS_CONTEXT": "main-ci-build"
+}

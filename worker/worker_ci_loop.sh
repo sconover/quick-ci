@@ -65,7 +65,7 @@ do
     # NOTE: build logs are shared publicly, with no basic auth etc.
     # If the git sha is private, this url will be impossible to guess.
     # ...Suggestions for additional capabilities here are certainly welcome.
-    GIT_SHA=$git_sha bash -c "time $command_to_run" 2>&1 | gsutil -h "Content-Type:text/plain" cp -a public-read - "$build_log_git_sha_path"
+    GIT_SHA=$git_sha bash -c "date; time $command_to_run" 2>&1 | gsutil -h "Content-Type:text/plain" cp -a public-read - "$build_log_git_sha_path"
     if [ "${PIPESTATUS[0]}" == "0" ]; then
       gsutil_mv "BUILD SUCCESS" "$in_progress_git_sha_path" "$success_git_sha_path"
     else
