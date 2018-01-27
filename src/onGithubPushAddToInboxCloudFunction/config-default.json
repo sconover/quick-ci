@@ -1,4 +1,5 @@
 {
   "CI_BUCKET": "this-is-the-ci-bucket",
+  "CI_INBOX_FOLDER": "ci-inbox",
   "GCP_PROJECT": "this-is-the-gcp-project"
 }

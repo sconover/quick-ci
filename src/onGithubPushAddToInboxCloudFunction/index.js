@@ -1,29 +1,119 @@
+// gcloud beta functions deploy onGithubPushAddToCiInbox --trigger-http --stage-bucket sc-cloud-functions-staging-bucket --source .
+// gcloud beta functions deploy onFolderEventUpdateGithubCommitStatus --trigger-bucket raw-ci-test-bucket --stage-bucket sc-cloud-functions-staging-bucket --source .
+
 const Storage = require('@google-cloud/storage')
 
 const config = require('./config')
 
-const CI_BUCKET = config.get('CI_BUCKET')
+const BUCKET = config.get('BUCKET')
+const GCP_PROJECT = config.get('GCP_PROJECT')
+const GITHUB_ACCESS_TOKEN = config.get('GITHUB_ACCESS_TOKEN')
 
-const storage = Storage({
-  projectId: config.get('GCP_PROJECT')
-})
-const bucket = storage.bucket(CI_BUCKET)
+const storage = Storage({projectId: GCP_PROJECT})
+const bucket = storage.bucket(BUCKET)
 
-function createInboxGitShaFile(gitSha) {
-  bucket.file("inbox/" + gitSha).save("")
-}
+const ciInboxFolder = config.get('CI_INBOX_FOLDER')
+const ciInProgressFolder = config.get('CI_IN_PROGRESS_FOLDER')
+const ciSuccessFolder = config.get('CI_SUCCESS_FOLDER')
+const ciFailureFolder = config.get('CI_FAILURE_FOLDER')
 
+const GITHUB_COMMIT_STATE_PENDING = "pending"
+const GITHUB_COMMIT_STATE_SUCCESS = "success"
+const GITHUB_COMMIT_STATE_FAILURE = "failure"
 
 /**
  * see https://cloud.google.com/functions/docs/calling/http
  */
-exports.onGithubPushAddToInboxCloudFunction = function onGithubPushAddToInboxCloudFunction(httpRequest, httpResponse) {
-  var gitRefRegex = /.*/
+exports.onGithubPushAddToCiInbox = function(httpRequest, httpResponse) {
+  console.log("XX", httpRequest.body.repository.full_name)
+  console.log(httpRequest.body)
+  const gitSha = httpRequest.body.after
+  const gitRef = httpRequest.body.ref // may be prefixed with "refs/heads/" or "refs/tags/"
+  const gitShaFilePath = ciInboxFolder + "/" + gitSha
+  bucket.file(gitShaFilePath).save(JSON.stringify({
+    "githubRepoFullName": httpRequest.body.repository.full_name
+  }))
+  // save json: github account, github repo name
 
-  var gitSha = httpRequest.body.after
+  httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
+}
 
-  // may be prefixed with "refs/heads/" or "refs/tags/"
-  var gitRef = httpRequest.body.ref
-  createInboxGitShaFile(gitSha)
-  httpResponse.send(`ciBucket=${CI_BUCKET} gitSha=${gitSha} gitRef=${gitRef} match=${gitRef.match(gitRefRegex)}`)
+function httpPostGitShaStatusToGithub(
+  githubRepoFullName,
+  gitCommitSha,
+  githubGitCommitState,
+  detailUrl,
+  description) {
+  const request = require('request')
+  const postContent = {
+    headers: {
+      'Authorization' : "token " + GITHUB_ACCESS_TOKEN,
+      'User-Agent': 'some-User-Agent'}, // github requires a user agent
+    url: "https://api.github.com/repos/" + githubRepoFullName + "/statuses/" + gitCommitSha,
+    body: JSON.stringify({
+      "state": githubGitCommitState,
+      "target_url": detailUrl,
+      "description": description + " [RAWCI]"
+    })
+  }
+  console.log(postContent)
+  request.post(postContent, function(error, response, body){
+    console.log(error, body)
+  })
+}
+
+function parseGitShaFromFileName(fileName) {
+  return fileName.substring(fileName.lastIndexOf("/")+1)
+}
+
+function readFileContent(fileName, callback) {
+  console.log("read file", fileName)
+  var content = ""
+  bucket.file(fileName).createReadStream()
+  .on('data', function(data) {
+    content += data
+  }).on('end', function() {
+    callback(content)
+  })
+}
+
+function deleteFile(fileName) {
+  bucket.file(fileName).delete()
+}
+
+
+exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
+  console.log(event)
+  const file = event.data;
+
+  if (file.resourceState == "exists") {
+    readFileContent(file.name, function(rawContent) {
+      const jsonContent = JSON.parse(rawContent)
+
+      function updateGitCommitState(githubGitCommitState) {
+        console.log(githubGitCommitState, file.name, jsonContent)
+
+        httpPostGitShaStatusToGithub(
+          jsonContent.githubRepoFullName,
+          parseGitShaFromFileName(file.name),
+          githubGitCommitState,
+          "http://www.google.com",
+          "this is the description"
+        )
+      }
+
+      if (file.name.startsWith(ciInProgressFolder + "/")) {
+        updateGitCommitState(GITHUB_COMMIT_STATE_PENDING)
+      } else if (file.name.startsWith(ciSuccessFolder + "/")) {
+        updateGitCommitState(GITHUB_COMMIT_STATE_SUCCESS)
+        deleteFile(file.name)
+      } else if (file.name.startsWith(ciFailureFolder + "/")) {
+        updateGitCommitState(GITHUB_COMMIT_STATE_FAILURE)
+        deleteFile(file.name)
+      }
+      callback()
+    })
+  } else {
+    callback()
+  }
 }
