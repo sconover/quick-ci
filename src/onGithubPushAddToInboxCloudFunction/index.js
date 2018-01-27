@@ -31,7 +31,8 @@ exports.onGithubPushAddToCiInbox = function(httpRequest, httpResponse) {
   const gitRef = httpRequest.body.ref // may be prefixed with "refs/heads/" or "refs/tags/"
   const gitShaFilePath = ciInboxFolder + "/" + gitSha
   bucket.file(gitShaFilePath).save(JSON.stringify({
-    "githubRepoFullName": httpRequest.body.repository.full_name
+    "githubRepoFullName": httpRequest.body.repository.full_name,
+    "githubPushWebhookTimestampMillis": new Date().getTime()
   }))
 
   httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
@@ -87,8 +88,9 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
   console.log("onFolderEventUpdateGithubCommitStatus", event)
   const file = event.data;
 
-  if (file.resourceState == "exists") {
+  if (file.resourceState == "exists" && parseGitShaFromFileName(file.name).match(/^[a-f0-9]{40}$/i)) {
     readFileContent(file.name, function(rawContent) {
+      console.log(file.name, rawContent)
       const jsonContent = JSON.parse(rawContent)
 
       function updateGitCommitState(githubGitCommitState) {
@@ -97,7 +99,8 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
           parseGitShaFromFileName(file.name),
           githubGitCommitState,
           "http://www.google.com",
-          "this is the description"
+          "" + (new Date().getTime()-jsonContent.githubPushWebhookTimestampMillis)/1000 +
+          "s from initial receipt to '" + githubGitCommitState + "'"
         )
       }
 
