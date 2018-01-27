@@ -83,6 +83,10 @@ function deleteFile(fileName) {
   bucket.file(fileName).delete()
 }
 
+function secondsSinceReferenceTime(referenceTimeMillis) {
+  return "" + Math.round(Number((new Date().getTime()-referenceTimeMillis)/1000)) + "s"
+}
+
 exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
   console.log("onFolderEventUpdateGithubCommitStatus", event)
   const file = event.data;
@@ -92,14 +96,16 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
       console.log(file.name, rawContent)
       const jsonContent = JSON.parse(rawContent)
 
+      const gitSha = parseGitShaFromFileName(file.name)
+
       function updateGitCommitState(githubGitCommitState) {
         httpPostGitShaStatusToGithub(
           jsonContent.githubRepoFullName,
-          parseGitShaFromFileName(file.name),
+          gitSha,
           githubGitCommitState,
-          "http://www.google.com",
-          "" + Math.round(Number((new Date().getTime()-jsonContent.githubPushWebhookTimestampMillis)/1000)) +
-          "s from initial receipt to '" + githubGitCommitState + "'"
+          buildLogExternalUrl(gitSha),
+          secondsSinceReferenceTime(jsonContent.githubPushWebhookTimestampMillis) +
+          " from initial receipt to '" + githubGitCommitState + "'"
         )
       }
 
@@ -111,6 +117,69 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
       } else if (file.name.startsWith(ciFailureFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_FAILURE)
         deleteFile(file.name)
+      }
+      callback()
+    })
+  } else {
+    callback()
+  }
+}
+
+function sendSlackNotification(messageText, attachmentTitle, attachmentLink, attachmentFields, callback) {
+  const IncomingWebhook = require('@slack/client').IncomingWebhook
+  const slackWebhookUrl = config.get('SLACK_WEBHOOK_URL')
+  const webhook = new IncomingWebhook(slackWebhookUrl)
+
+  const message = {
+    text: messageText,
+    attachments: [
+      {
+        title: attachmentTitle,
+        title_link: attachmentLink,
+        fields: attachmentFields
+      }
+    ]
+  }
+
+  webhook.send(message, callback)
+}
+
+exports.onFolderEventSendSlackNotification = function(event, callback) {
+  console.log("onFolderEventSendSlackNotification", event)
+  const file = event.data;
+
+  if (file.resourceState == "exists" && parseGitShaFromFileName(file.name).match(/^[a-f0-9]{40}$/i)) {
+    const gitSha = parseGitShaFromFileName(file.name)
+
+    readFileContent(file.name, function(rawContent) {
+      console.log(file.name, rawContent)
+      const jsonContent = JSON.parse(rawContent)
+
+      function sendSlackNotificationAboutBuildState(currentBuildState) {
+        const timingSeconds = secondsSinceReferenceTime(jsonContent.githubPushWebhookTimestampMillis)
+        sendSlackNotification(
+          currentBuildState + " | " +
+            githubStatusContext + " | " +
+            jsonContent.githubRepoFullName + " | " +
+            timingSeconds + " | " +
+            gitSha,
+          "build-log",
+          buildLogExternalUrl(gitSha),
+          [
+            {title: 'buildStatus', value: currentBuildState},
+            {title: 'githubStatusContext', value: githubStatusContext},
+            {title: 'githubRepoName', value: jsonContent.githubRepoFullName},
+            {title: 'timingSeconds', value: timingSeconds},
+            {title: 'gitSha', value: gitSha}
+          ])
+      }
+
+      if (file.name.startsWith(ciInProgressFolder + "/")) {
+        sendSlackNotificationAboutBuildState("in-progress")
+      } else if (file.name.startsWith(ciSuccessFolder + "/")) {
+        sendSlackNotificationAboutBuildState("success")
+      } else if (file.name.startsWith(ciFailureFolder + "/")) {
+        sendSlackNotificationAboutBuildState("failure")
       }
       callback()
     })
