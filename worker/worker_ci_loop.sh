@@ -58,14 +58,14 @@ do
     build_log_git_sha_path="$gs_build_log_url/$git_sha.log"
 
     gsutil_mv "BUILD IN PROGRESS" "$next_inbox_git_sha_path" "$in_progress_git_sha_path"
-    echo "RUNNING: 'GIT_SHA=$git_sha bash -c \"time $command_to_run\"'"
+    echo "RUNNING: 'time GIT_SHA=$git_sha bash -c \"date; $command_to_run\"'"
 
     set +e
     # copied the command printed above to avoid weird bash interpolation problems...
     # NOTE: build logs are shared publicly, with no basic auth etc.
     # If the git sha is private, this url will be impossible to guess.
     # ...Suggestions for additional capabilities here are certainly welcome.
-    GIT_SHA=$git_sha bash -c "date; time $command_to_run" 2>&1 | gsutil -h "Content-Type:text/plain" cp -a public-read - "$build_log_git_sha_path"
+    time GIT_SHA=$git_sha bash -c "date; $command_to_run" 2>&1 | gsutil -h "Content-Type:text/plain" cp -a public-read - "$build_log_git_sha_path"
     if [ "${PIPESTATUS[0]}" == "0" ]; then
       gsutil_mv "BUILD SUCCESS" "$in_progress_git_sha_path" "$success_git_sha_path"
     else

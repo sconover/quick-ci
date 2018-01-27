@@ -18,6 +18,7 @@ const ciSuccessFolder = config.get('CI_SUCCESS_FOLDER')
 const ciFailureFolder = config.get('CI_FAILURE_FOLDER')
 const buildLogFolder = config.get('BUILD_LOG_FOLDER')
 const githubStatusContext = "raw-ci/" + config.get('GITHUB_STATUS_CONTEXT')
+const clearShaFileOnSuccess = config.get('CLEAR_SHA_FILE_ON_SUCCESS')
 
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
@@ -113,7 +114,9 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
         updateGitCommitState(GITHUB_COMMIT_STATE_PENDING)
       } else if (file.name.startsWith(ciSuccessFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_SUCCESS)
-        deleteFile(file.name)
+        if (clearShaFileOnSuccess) { // leaving the file in place makes the success folder useful as the inbox for a subsequent pipeline step.
+          deleteFile(file.name)
+        }
       } else if (file.name.startsWith(ciFailureFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_FAILURE)
         deleteFile(file.name)

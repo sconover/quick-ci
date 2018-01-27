@@ -48,9 +48,9 @@ GITHUB_STATUS_CONTEXT: Used to distinguish multiple kinds of status updates with
 
 == CLOUD FUNCTIONS ==
 
-cd google-cloud-functions
-
 1a) Set up the cloud function that the github on-push-event webhook will invoke
+
+cd google-cloud-functions
 gcloud beta functions deploy someMainCIonGithubPushAddToCiInbox --entry-point=onGithubPushAddToCiInbox --trigger-http --stage-bucket your-cloud-functions-staging-bucket --source .
 
 This operation will print the httpsTrigger to the console, for example:
@@ -76,12 +76,18 @@ Go to your project on github:
     You can open up a recent delivery, and click the "Redeliver" button to test the webhook.
 
 2) Set up the cloud function will be invoked on finle writes to the bucket
+
+cd google-cloud-functions
 gcloud beta functions deploy someMainCIonFolderEvent --entry-point=onFolderEventUpdateGithubCommitStatus --trigger-bucket your-gcs-bucket --stage-bucket your-cloud-functions-staging-bucket --source .
 
 Note the functions are now in:
 https://console.cloud.google.com/functions/list
 ...and in particular, that you can view log output of each function
 
+[optional] 3) Set up the slack cloud function
+
+cd google-cloud-functions
+gcloud beta functions deploy someMainCIonFolderEventSlack --entry-point=onFolderEventSendSlackNotification --trigger-bucket your-gcs-bucket --stage-bucket your-cloud-functions-staging-bucket --source .
 
 == WORKER CI LOOP ==
 
@@ -89,7 +95,7 @@ https://console.cloud.google.com/functions/list
 
 You will want to invoke a key project ci command, e.g. run all tests. For example, from a cloned git repo of a bazel-based project:
 
-../raw-ci/worker/worker_ci_loop.sh ../raw-ci/google-cloud-functions/config.json -- 'git fetch origin && git checkout $GIT_SHA && bazel test //...'
+../raw-ci/worker/worker_ci_loop.sh ../raw-ci/google-cloud-functions/config.json -- 'git fetch origin && git checkout $GIT_SHA && time bazel test //...'
 
 This:
   - Invokes the worker ci loop script in the raw-ci repo you cloned on the build host (sibling to the bazel-based project)
