@@ -17,14 +17,12 @@ const ciInProgressFolder = config.get('CI_IN_PROGRESS_FOLDER')
 const ciSuccessFolder = config.get('CI_SUCCESS_FOLDER')
 const ciFailureFolder = config.get('CI_FAILURE_FOLDER')
 const buildLogFolder = config.get('BUILD_LOG_FOLDER')
+const githubStatusContext = "raw-ci/" + config.get('GITHUB_STATUS_CONTEXT')
 
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
 const GITHUB_COMMIT_STATE_FAILURE = "failure"
 
-/**
- * see https://cloud.google.com/functions/docs/calling/http
- */
 exports.onGithubPushAddToCiInbox = function(httpRequest, httpResponse) {
   console.log("onGithubPushAddToCiInbox", httpRequest.body)
   const gitSha = httpRequest.body.after
@@ -57,7 +55,8 @@ function httpPostGitShaStatusToGithub(
     body: JSON.stringify({
       "state": githubGitCommitState,
       "target_url": buildLogExternalUrl(gitCommitSha),
-      "description": description + " [RAWCI]"
+      "description": description + " [RAWCI]",
+      "context": githubStatusContext
     })
   }
   console.log("httpPostGitShaStatusToGithub", postContent.url, postContent.body)
@@ -99,7 +98,7 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
           parseGitShaFromFileName(file.name),
           githubGitCommitState,
           "http://www.google.com",
-          "" + (new Date().getTime()-jsonContent.githubPushWebhookTimestampMillis)/1000 +
+          "" + Math.round(Number((new Date().getTime()-jsonContent.githubPushWebhookTimestampMillis)/1000)) +
           "s from initial receipt to '" + githubGitCommitState + "'"
         )
       }
