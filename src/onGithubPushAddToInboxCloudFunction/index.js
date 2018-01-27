@@ -17,21 +17,20 @@ const ciInProgressFolder = config.get('CI_IN_PROGRESS_FOLDER')
 const ciSuccessFolder = config.get('CI_SUCCESS_FOLDER')
 const ciFailureFolder = config.get('CI_FAILURE_FOLDER')
 const buildLogFolder = config.get('BUILD_LOG_FOLDER')
+const githubStatusContext = "raw-ci/" + config.get('GITHUB_STATUS_CONTEXT')
 
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
 const GITHUB_COMMIT_STATE_FAILURE = "failure"
 
-/**
- * see https://cloud.google.com/functions/docs/calling/http
- */
 exports.onGithubPushAddToCiInbox = function(httpRequest, httpResponse) {
   console.log("onGithubPushAddToCiInbox", httpRequest.body)
   const gitSha = httpRequest.body.after
   const gitRef = httpRequest.body.ref // may be prefixed with "refs/heads/" or "refs/tags/"
   const gitShaFilePath = ciInboxFolder + "/" + gitSha
   bucket.file(gitShaFilePath).save(JSON.stringify({
-    "githubRepoFullName": httpRequest.body.repository.full_name
+    "githubRepoFullName": httpRequest.body.repository.full_name,
+    "githubPushWebhookTimestampMillis": new Date().getTime()
   }))
 
   httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
@@ -56,7 +55,8 @@ function httpPostGitShaStatusToGithub(
     body: JSON.stringify({
       "state": githubGitCommitState,
       "target_url": buildLogExternalUrl(gitCommitSha),
-      "description": description + " [RAWCI]"
+      "description": description + " [RAWCI]",
+      "context": githubStatusContext
     })
   }
   console.log("httpPostGitShaStatusToGithub", postContent.url, postContent.body)
@@ -87,8 +87,9 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
   console.log("onFolderEventUpdateGithubCommitStatus", event)
   const file = event.data;
 
-  if (file.resourceState == "exists") {
+  if (file.resourceState == "exists" && parseGitShaFromFileName(file.name).match(/^[a-f0-9]{40}$/i)) {
     readFileContent(file.name, function(rawContent) {
+      console.log(file.name, rawContent)
       const jsonContent = JSON.parse(rawContent)
 
       function updateGitCommitState(githubGitCommitState) {
@@ -97,7 +98,8 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
           parseGitShaFromFileName(file.name),
           githubGitCommitState,
           "http://www.google.com",
-          "this is the description"
+          "" + Math.round(Number((new Date().getTime()-jsonContent.githubPushWebhookTimestampMillis)/1000)) +
+          "s from initial receipt to '" + githubGitCommitState + "'"
         )
       }
 
