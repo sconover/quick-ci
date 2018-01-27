@@ -16,6 +16,7 @@ const ciInboxFolder = config.get('CI_INBOX_FOLDER')
 const ciInProgressFolder = config.get('CI_IN_PROGRESS_FOLDER')
 const ciSuccessFolder = config.get('CI_SUCCESS_FOLDER')
 const ciFailureFolder = config.get('CI_FAILURE_FOLDER')
+const buildLogFolder = config.get('BUILD_LOG_FOLDER')
 
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
@@ -25,17 +26,19 @@ const GITHUB_COMMIT_STATE_FAILURE = "failure"
  * see https://cloud.google.com/functions/docs/calling/http
  */
 exports.onGithubPushAddToCiInbox = function(httpRequest, httpResponse) {
-  console.log("XX", httpRequest.body.repository.full_name)
-  console.log(httpRequest.body)
+  console.log("onGithubPushAddToCiInbox", httpRequest.body)
   const gitSha = httpRequest.body.after
   const gitRef = httpRequest.body.ref // may be prefixed with "refs/heads/" or "refs/tags/"
   const gitShaFilePath = ciInboxFolder + "/" + gitSha
   bucket.file(gitShaFilePath).save(JSON.stringify({
     "githubRepoFullName": httpRequest.body.repository.full_name
   }))
-  // save json: github account, github repo name
 
   httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
+}
+
+function buildLogExternalUrl(gitSha) {
+  return "https://storage.googleapis.com/" + BUCKET + "/" + buildLogFolder + "/" + gitSha + ".log"
 }
 
 function httpPostGitShaStatusToGithub(
@@ -52,11 +55,11 @@ function httpPostGitShaStatusToGithub(
     url: "https://api.github.com/repos/" + githubRepoFullName + "/statuses/" + gitCommitSha,
     body: JSON.stringify({
       "state": githubGitCommitState,
-      "target_url": detailUrl,
+      "target_url": buildLogExternalUrl(gitCommitSha),
       "description": description + " [RAWCI]"
     })
   }
-  console.log(postContent)
+  console.log("httpPostGitShaStatusToGithub", postContent.url, postContent.body)
   request.post(postContent, function(error, response, body){
     console.log(error, body)
   })
@@ -67,7 +70,6 @@ function parseGitShaFromFileName(fileName) {
 }
 
 function readFileContent(fileName, callback) {
-  console.log("read file", fileName)
   var content = ""
   bucket.file(fileName).createReadStream()
   .on('data', function(data) {
@@ -81,9 +83,8 @@ function deleteFile(fileName) {
   bucket.file(fileName).delete()
 }
 
-
 exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
-  console.log(event)
+  console.log("onFolderEventUpdateGithubCommitStatus", event)
   const file = event.data;
 
   if (file.resourceState == "exists") {
@@ -91,8 +92,6 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
       const jsonContent = JSON.parse(rawContent)
 
       function updateGitCommitState(githubGitCommitState) {
-        console.log(githubGitCommitState, file.name, jsonContent)
-
         httpPostGitShaStatusToGithub(
           jsonContent.githubRepoFullName,
           parseGitShaFromFileName(file.name),
