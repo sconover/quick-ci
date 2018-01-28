@@ -19,10 +19,10 @@ checkConfig('CI_SUCCESS_FOLDER')
 checkConfig('CI_FAILURE_FOLDER')
 checkConfig('BUILD_LOG_FOLDER')
 checkConfig('BUILD_NAME')
-checkConfig('CLEAR_SHA_FILE_ON_SUCCESS')
+checkConfig('NOTIFY_NEXT_TOPIC_ON_SUCCESS')
 
 function checkConfig (setting) {
-  if (nconf.get(setting) == undefined || nconf.get(setting) == null) {
+  if (nconf.get(setting) == undefined) {
     throw new Error(`You must set ${setting} as an environment variable or in config.json!`)
   }
 }
