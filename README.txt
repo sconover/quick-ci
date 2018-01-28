@@ -42,7 +42,7 @@ GITHUB_ACCESS_TOKEN: A personal access token used to invoke github api functions
     - Paste in the resulting random token string as the value for GITHUB_ACCESS_TOKEN
 CI_*: These are subfolder names the build uses, you can leave the default names for now.
 BUILD_LOG_FOLDER: Where publicly-accessible build logs will go. You probably want to just use the default value.
-GITHUB_STATUS_CONTEXT: Used to distinguish multiple kinds of status updates within a single git commit in github.
+BUILD_NAME: Used to distinguish multiple kinds of status updates within a single git commit in github.
   This only matters if you have multiple build stages that affect commit status. You probably will just want to use the default value.
 
 
@@ -88,6 +88,14 @@ https://console.cloud.google.com/functions/list
 
 cd google-cloud-functions
 gcloud beta functions deploy someMainCIonFolderEventSlack --entry-point=onFolderEventSendSlackNotification --trigger-bucket your-gcs-bucket --stage-bucket your-cloud-functions-staging-bucket --source .
+
+== PUBSUB ==
+
+Create a topic named after the BUILD_NAME, and suffixed -topic.
+
+https://console.cloud.google.com/cloudpubsub/topicList
+
+For example, if your build name is "testbuild", you need to create a topic called "testbuild-topic".
 
 == WORKER CI LOOP ==
 

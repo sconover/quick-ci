@@ -1,4 +1,4 @@
-// gcloud beta functions deploy onGithubPushAddToCiInbox --trigger-http --stage-bucket sc-cloud-functions-staging-bucket --source .
+// gcloud beta functions deploy my-build-name-onGithubPushTriggerNewBuild --entry-point=onGithubPushTriggerNewBuild --trigger-http --stage-bucket sc-cloud-functions-staging-bucket --source .
 // gcloud beta functions deploy onFolderEventUpdateGithubCommitStatus --trigger-bucket raw-ci-test-bucket --stage-bucket sc-cloud-functions-staging-bucket --source .
 
 const Storage = require('@google-cloud/storage')
@@ -17,15 +17,36 @@ const ciInProgressFolder = config.get('CI_IN_PROGRESS_FOLDER')
 const ciSuccessFolder = config.get('CI_SUCCESS_FOLDER')
 const ciFailureFolder = config.get('CI_FAILURE_FOLDER')
 const buildLogFolder = config.get('BUILD_LOG_FOLDER')
-const githubStatusContext = "raw-ci/" + config.get('GITHUB_STATUS_CONTEXT')
+const buildName = config.get('BUILD_NAME')
+const pubsubTopicName = buildName + "-topic";
+const githubStatusContext = "raw-ci/" + buildName
 const clearShaFileOnSuccess = config.get('CLEAR_SHA_FILE_ON_SUCCESS')
 
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
 const GITHUB_COMMIT_STATE_FAILURE = "failure"
 
-exports.onGithubPushAddToCiInbox = function(httpRequest, httpResponse) {
-  console.log("onGithubPushAddToCiInbox", httpRequest.body)
+function publishMessage(gsFilePath, callback) {
+  console.log("publish", gsFilePath)
+
+  const PubSub = require('@google-cloud/pubsub');
+
+  new PubSub()
+    .topic(pubsubTopicName)
+    .publisher()
+    .publish(Buffer.from(gsFilePath))
+    .then(results => {
+      const messageId = results[0]
+      console.log("publish success", messageId, gsFilePath)
+      callback()
+    })
+    .catch(err => {
+      console.log("publish error", err, gsFilePath)
+    })
+}
+
+exports.onGithubPushTriggerNewBuild = function(httpRequest, httpResponse) {
+  console.log("onGithubPushTriggerNewBuild", httpRequest.body)
   const gitSha = httpRequest.body.after
   const gitRef = httpRequest.body.ref // may be prefixed with "refs/heads/" or "refs/tags/"
   const gitShaFilePath = ciInboxFolder + "/" + gitSha
@@ -34,7 +55,9 @@ exports.onGithubPushAddToCiInbox = function(httpRequest, httpResponse) {
     "githubPushWebhookTimestampMillis": new Date().getTime()
   }))
 
-  httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
+  publishMessage("gs://" + BUCKET + "/" + gitShaFilePath, function() {
+    httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
+  })
 }
 
 function buildLogExternalUrl(gitSha) {
