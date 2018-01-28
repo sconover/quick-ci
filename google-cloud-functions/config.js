@@ -18,7 +18,7 @@ checkConfig('CI_IN_PROGRESS_FOLDER')
 checkConfig('CI_SUCCESS_FOLDER')
 checkConfig('CI_FAILURE_FOLDER')
 checkConfig('BUILD_LOG_FOLDER')
-checkConfig('GITHUB_STATUS_CONTEXT')
+checkConfig('BUILD_NAME')
 checkConfig('CLEAR_SHA_FILE_ON_SUCCESS')
 
 function checkConfig (setting) {
