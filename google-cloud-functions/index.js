@@ -21,19 +21,19 @@ const buildLogFolder = config.get('BUILD_LOG_FOLDER')
 const buildName = config.get('BUILD_NAME')
 const pubsubTopicName = buildName + "-topic";
 const githubStatusContext = "raw-ci/" + buildName
-const clearShaFileOnSuccess = config.get('CLEAR_SHA_FILE_ON_SUCCESS')
+const notifyNextTopicOnSuccess = config.get('NOTIFY_NEXT_TOPIC_ON_SUCCESS')
 
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
 const GITHUB_COMMIT_STATE_FAILURE = "failure"
 
-function publishMessage(gsFilePath, callback) {
+function publishMessage(topicName, gsFilePath, callback) {
   console.log("publish", gsFilePath)
 
   const PubSub = require('@google-cloud/pubsub');
 
   new PubSub()
-    .topic(pubsubTopicName)
+    .topic(topicName)
     .publisher()
     .publish(Buffer.from(gsFilePath))
     .then(results => {
@@ -46,6 +46,18 @@ function publishMessage(gsFilePath, callback) {
     })
 }
 
+function publishMessageToThisTopic(gsFilePath, callback) {
+  publishMessage(pubsubTopicName, gsFilePath, callback)
+}
+
+function publishMessageToNextTopic(gsFilePath, callback) {
+  publishMessage(notifyNextTopicOnSuccess, gsFilePath, callback)
+}
+
+function fileUrl(gitShaFilePath) {
+  return "gs://" + BUCKET + "/" + gitShaFilePath
+}
+
 exports.onGithubPushTriggerNewBuild = function(httpRequest, httpResponse) {
   console.log("onGithubPushTriggerNewBuild", httpRequest.body)
   const gitSha = httpRequest.body.after
@@ -56,7 +68,7 @@ exports.onGithubPushTriggerNewBuild = function(httpRequest, httpResponse) {
     "githubPushWebhookTimestampMillis": new Date().getTime()
   }))
 
-  publishMessage("gs://" + BUCKET + "/" + gitShaFilePath, function() {
+  publishMessageToThisTopic(fileUrl(gitShaFilePath), function() {
     httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
   })
 }
@@ -136,16 +148,20 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
 
       if (file.name.startsWith(ciInProgressFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_PENDING)
+        callback()
       } else if (file.name.startsWith(ciSuccessFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_SUCCESS)
-        if (clearShaFileOnSuccess) { // leaving the file in place makes the success folder useful as the inbox for a subsequent pipeline step.
+        if (notifyNextTopicOnSuccess) { // leaving the file in place makes the success folder useful as the inbox for a subsequent pipeline step.
           deleteFile(file.name)
+          callback()
+        } else {
+          publishMessageToNextTopic(fileUrl(file.name), callback)
         }
       } else if (file.name.startsWith(ciFailureFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_FAILURE)
         deleteFile(file.name)
+        callback()
       }
-      callback()
     })
   } else {
     callback()
