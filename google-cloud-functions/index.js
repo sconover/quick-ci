@@ -1,5 +1,6 @@
-// gcloud beta functions deploy my-build-name-onGithubPushTriggerNewBuild --entry-point=onGithubPushTriggerNewBuild --trigger-http --stage-bucket sc-cloud-functions-staging-bucket --source .
-// gcloud beta functions deploy onFolderEventUpdateGithubCommitStatus --trigger-bucket raw-ci-test-bucket --stage-bucket sc-cloud-functions-staging-bucket --source .
+// gcloud beta functions deploy ci-onGithubPushTriggerNewBuild --entry-point=onGithubPushTriggerNewBuild --trigger-http --stage-bucket my-staging-bucket --source .
+// gcloud beta functions deploy ci-onFolderEventUpdateGithubCommitStatus --entry-point=onFolderEventUpdateGithubCommitStatus --trigger-bucket my-build-bucket --stage-bucket my-staging-bucket --source .
+// gcloud beta functions deploy ci-onFolderEventSendSlackNotification --entry-point=onFolderEventSendSlackNotification --trigger-bucket my-build-bucket --stage-bucket my-staging-bucket --source .
 
 const Storage = require('@google-cloud/storage')
 
