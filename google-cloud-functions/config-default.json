@@ -7,5 +7,18 @@
   "CI_SUCCESS_FOLDER": "success",
   "CI_FAILURE_FOLDER": "failure",
   "BUILD_LOG_FOLDER": "ci-build-logs",
-  "GITHUB_STATUS_CONTEXT": "main-ci-build"
+  "BUILD_NAME": "main-ci-build",
+  "NOTIFICATION_MESSAGE_SETTINGS":{
+    "messageTemplate": ":{{buildEmojiShortcode}}::{{gitRefEmojiShortcode}}::{{buildStatusEmojiShortcode}}: +{{timingSeconds}} <{{githubDiffVsMasterUrl}}|[{{gitRefTruncated}}]> {{headCommitMessage}} <@{{headCommiterUsername}}> <{{githubGitShowUrl}}|[{{shortGitSha}}]> <{{buildLogUrl}}|[build log]>",
+    "buildEmojiShortcode": "gear",
+    "buildStatusEmojiShortcodes": {
+      "inProgress": "barber",
+      "success": "white_check_mark",
+      "failure": "x"
+    },
+    "gitRefEmojiMatchers": [
+      {"startsWith": "refs/heads/master", "emojiShortcode": "tophat"},
+      {"startsWith": "", "emojiShortcode": "rainbow"}
+    ]
+  }
 }
