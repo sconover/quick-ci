@@ -22,6 +22,7 @@ const buildName = config.get('BUILD_NAME')
 const pubsubTopicName = buildName + "-topic";
 const githubStatusContext = "raw-ci/" + buildName
 const notifyNextTopicOnSuccess = config.get('NOTIFY_NEXT_TOPIC_ON_SUCCESS')
+const notificationMessageSettings = config.get('NOTIFICATION_MESSAGE_SETTINGS')
 
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
@@ -61,15 +62,22 @@ function fileUrl(gitShaFilePath) {
 exports.onGithubPushTriggerNewBuild = function(httpRequest, httpResponse) {
   console.log("onGithubPushTriggerNewBuild", httpRequest.body)
   const gitSha = httpRequest.body.after
-  const gitRef = httpRequest.body.ref // may be prefixed with "refs/heads/" or "refs/tags/"
   const gitShaFilePath = ciInboxFolder + "/" + gitSha
-  bucket.file(gitShaFilePath).save(JSON.stringify({
+  const fileContents = JSON.stringify({
     "githubRepoFullName": httpRequest.body.repository.full_name,
-    "githubPushWebhookTimestampMillis": new Date().getTime()
-  }))
+    "githubPushWebhookTimestampMillis": new Date().getTime(),
+    "headCommitMessage": httpRequest.body.head_commit.message,
+    "headCommiterUsername": httpRequest.body.head_commit.committer.username,
+    "gitRef": httpRequest.body.ref,
+    "gitBaseRef":  httpRequest.body.base_ref,
+    "gitShaBefore": httpRequest.body.before,
+    "gitSha": httpRequest.body.after
+  })
+  console.log("onGithubPushTriggerNewBuild-saveFile", gitShaFilePath, fileContents)
+  bucket.file(gitShaFilePath).save(fileContents)
 
   publishMessageToThisTopic(fileUrl(gitShaFilePath), function() {
-    httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath} gitRef=${gitRef}`)
+    httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath}`)
   })
 }
 
@@ -161,6 +169,8 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
         updateGitCommitState(GITHUB_COMMIT_STATE_FAILURE)
         deleteFile(file.name)
         callback()
+      } else {
+        throw new Error(`don't know how to handle file ${file.name}`)
       }
     })
   } else {
@@ -168,24 +178,113 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
   }
 }
 
-function sendSlackNotification(messageText, attachmentTitle, attachmentLink, attachmentFields, callback) {
+function sendSlackNotification(messageText, callback) {
+  console.log("sendSlackNotification", messageText)
   const IncomingWebhook = require('@slack/client').IncomingWebhook
   const slackWebhookUrl = config.get('SLACK_WEBHOOK_URL')
   const webhook = new IncomingWebhook(slackWebhookUrl)
+  webhook.send(messageText, callback)
+}
 
-  const message = {
-    text: messageText,
-    attachments: [
-      {
-        title: attachmentTitle,
-        title_link: attachmentLink,
-        fields: attachmentFields
+function interpolate(template, valueMap) {
+  return template.replace(/\{\{(.+?)\}\}/g,
+    function(original, key) {
+      if (valueMap[key] == undefined) {
+        throw new Error(`value for template variable '${key}' not found in '${Object.keys(valueMap)}'`)
       }
-    ]
+      return valueMap[key]
+    }
+  );
+};
+
+const BUILD_STATE = {
+  IN_PROGRESS: "inProgress",
+  SUCCESS: "success",
+  FAILURE: "failure"
+}
+
+function githubCompareUrl(githubRepoFullName, gitShaBefore, gitSha) {
+  return `https://github.com/${githubRepoFullName}/compare/${gitShaBefore}...${gitSha}`
+}
+
+function githubGitShowCompareUrl(buildFileJsonContent) {
+  return githubCompareUrl(buildFileJsonContent.githubRepoFullName, buildFileJsonContent.gitShaBefore, buildFileJsonContent.gitSha)
+}
+
+function githubDiffVsMasterUrl(buildFileJsonContent) {
+  return githubCompareUrl(buildFileJsonContent.githubRepoFullName, "master", buildFileJsonContent.gitSha)
+}
+
+function shortGitSha(gitSha) {
+  return gitSha.substring(0,7)
+}
+
+function determineGitRef(gitRef, gitBaseRef) {
+  if (gitRef != null) {
+    return gitRef
+  }
+  if (gitBaseRef != null) {
+    return gitBaseRef
+  }
+  throw new Error("both git refs were null, unexpectedly")
+}
+
+function niceGitRef(gitRef) {
+  return gitRef.replace("refs/heads/", "").replace("refs/tags/", "")
+}
+
+function niceGitRefTruncated(gitRef) {
+  const str = niceGitRef(gitRef)
+  return niceGitRef(gitRef).substring(0, str.length <= 30 ? str.length + 1 : 31)
+}
+
+function secondsSinceReferenceTime(referenceTimeMillis) {
+  return "" + Math.round(Number((new Date().getTime()-referenceTimeMillis)/1000)) + "s"
+}
+
+function determineEmojiForGitRef(gitRef, gitRefEmojiMatchers) {
+  const validMatchers = gitRefEmojiMatchers.filter(function(m){
+    return gitRef.startsWith(m.startsWith)
+  })
+
+  if (validMatchers.length == 0) {
+    throw new Error(`no emoji match found for gitref '${gitRef}'`)
   }
 
-  webhook.send(message, callback)
+  return validMatchers[0].emojiShortcode
 }
+
+function commitMessageTruncated(fullCommitMessage) {
+  var commitMessage = fullCommitMessage.replace(/\n/g, " ")
+  if (commitMessage.length > 30) {
+    commitMessage = commitMessage.substring(0, 28)
+    commitMessage += "..."
+    return commitMessage
+  } else {
+    return commitMessage
+  }
+}
+
+function sendCommitStatusSlackNotification(currentBuildState, buildFileJsonContent, callback) {
+  const messageTemplate = notificationMessageSettings["messageTemplate"]
+  const gitRef = determineGitRef(buildFileJsonContent.gitRef, buildFileJsonContent.gitBaseRef)
+  const valueMap = {
+    buildEmojiShortcode: notificationMessageSettings["buildEmojiShortcode"],
+    gitRefEmojiShortcode: determineEmojiForGitRef(gitRef, notificationMessageSettings["gitRefEmojiMatchers"]),
+    buildStatusEmojiShortcode: notificationMessageSettings.buildStatusEmojiShortcodes[currentBuildState],
+    githubGitShowUrl: githubGitShowCompareUrl(buildFileJsonContent),
+    shortGitSha: shortGitSha(buildFileJsonContent.gitSha),
+    timingSeconds: secondsSinceReferenceTime(buildFileJsonContent.githubPushWebhookTimestampMillis),
+    githubDiffVsMasterUrl: githubDiffVsMasterUrl(buildFileJsonContent),
+    gitRefTruncated: niceGitRefTruncated(gitRef),
+    headCommitMessage: commitMessageTruncated(buildFileJsonContent.headCommitMessage),
+    headCommiterUsername: buildFileJsonContent.headCommiterUsername,
+    buildLogUrl: buildLogExternalUrl(buildFileJsonContent.gitSha)
+  }
+  const messageText = interpolate(messageTemplate, valueMap)
+  sendSlackNotification(messageText, callback)
+}
+
 
 exports.onFolderEventSendSlackNotification = function(event, callback) {
   console.log("onFolderEventSendSlackNotification", event)
@@ -196,35 +295,21 @@ exports.onFolderEventSendSlackNotification = function(event, callback) {
 
     readFileContent(file.name, function(rawContent) {
       console.log(file.name, rawContent)
-      const jsonContent = JSON.parse(rawContent)
+      const buildFileJsonContent = JSON.parse(rawContent)
 
-      function sendSlackNotificationAboutBuildState(currentBuildState) {
-        const timingSeconds = secondsSinceReferenceTime(jsonContent.githubPushWebhookTimestampMillis)
-        sendSlackNotification(
-          currentBuildState + " | " +
-            githubStatusContext + " | " +
-            jsonContent.githubRepoFullName + " | " +
-            timingSeconds + " | " +
-            gitSha,
-          "build-log",
-          buildLogExternalUrl(gitSha),
-          [
-            {title: 'buildStatus', value: currentBuildState},
-            {title: 'githubStatusContext', value: githubStatusContext},
-            {title: 'githubRepoName', value: jsonContent.githubRepoFullName},
-            {title: 'timingSeconds', value: timingSeconds},
-            {title: 'gitSha', value: gitSha}
-          ])
+      function notifyOf(currentBuildState) {
+        sendCommitStatusSlackNotification(currentBuildState, buildFileJsonContent, callback)
       }
 
       if (file.name.startsWith(ciInProgressFolder + "/")) {
-        sendSlackNotificationAboutBuildState("in-progress")
+        notifyOf(BUILD_STATE.IN_PROGRESS)
       } else if (file.name.startsWith(ciSuccessFolder + "/")) {
-        sendSlackNotificationAboutBuildState("success")
+        notifyOf(BUILD_STATE.SUCCESS)
       } else if (file.name.startsWith(ciFailureFolder + "/")) {
-        sendSlackNotificationAboutBuildState("failure")
+        notifyOf(BUILD_STATE.FAILURE)
+      } else {
+        callback()
       }
-      callback()
     })
   } else {
     callback()

@@ -20,6 +20,7 @@ checkConfig('CI_FAILURE_FOLDER')
 checkConfig('BUILD_LOG_FOLDER')
 checkConfig('BUILD_NAME')
 checkConfig('NOTIFY_NEXT_TOPIC_ON_SUCCESS')
+checkConfig('NOTIFICATION_MESSAGE_SETTINGS')
 
 function checkConfig (setting) {
   if (nconf.get(setting) == undefined) {
