@@ -114,9 +114,9 @@ function parseGitShaFromFileName(fileName) {
   return fileName.substring(fileName.lastIndexOf("/")+1)
 }
 
-function readFileContent(fileName, callback) {
+function readFileContent(fileName, fileGeneration, callback) {
   var content = ""
-  bucket.file(fileName).createReadStream()
+  bucket.file(fileName, {generation: fileGeneration}).createReadStream()
   .on('data', function(data) {
     content += data
   }).on('end', function() {
@@ -137,7 +137,7 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
   const file = event.data;
 
   if (file.resourceState == "exists" && parseGitShaFromFileName(file.name).match(/^[a-f0-9]{40}$/i)) {
-    readFileContent(file.name, function(rawContent) {
+    readFileContent(file.name, file.generation, function(rawContent) {
       console.log(file.name, rawContent)
       const jsonContent = JSON.parse(rawContent)
 
@@ -154,16 +154,23 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
         )
       }
 
+      // WARNING: it's entirely possible that a race exists between this function and the slack function.
+      // if the file isn't in place at the time the slack function attempts to read the json payload,
+      // the slack function will fail.
+      // in theory, reading the file at the proper generation number should work, but initial try at
+      // this doesn't seem promising.
+      // If this problem crops up again, gotta consider what to do...
+
       if (file.name.startsWith(ciInProgressFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_PENDING)
         callback()
       } else if (file.name.startsWith(ciSuccessFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_SUCCESS)
         if (notifyNextTopicOnSuccess) { // leaving the file in place makes the success folder useful as the inbox for a subsequent pipeline step.
+          publishMessageToNextTopic(fileUrl(file.name), callback)
+        } else {
           deleteFile(file.name)
           callback()
-        } else {
-          publishMessageToNextTopic(fileUrl(file.name), callback)
         }
       } else if (file.name.startsWith(ciFailureFolder + "/")) {
         updateGitCommitState(GITHUB_COMMIT_STATE_FAILURE)
@@ -266,6 +273,7 @@ function commitMessageTruncated(fullCommitMessage) {
 }
 
 function sendCommitStatusSlackNotification(currentBuildState, buildFileJsonContent, callback) {
+  console.log("sendCommitStatusSlackNotification", currentBuildState, buildFileJsonContent)
   const messageTemplate = notificationMessageSettings["messageTemplate"]
   const gitRef = determineGitRef(buildFileJsonContent.gitRef, buildFileJsonContent.gitBaseRef)
   const valueMap = {
@@ -293,7 +301,7 @@ exports.onFolderEventSendSlackNotification = function(event, callback) {
   if (file.resourceState == "exists" && parseGitShaFromFileName(file.name).match(/^[a-f0-9]{40}$/i)) {
     const gitSha = parseGitShaFromFileName(file.name)
 
-    readFileContent(file.name, function(rawContent) {
+    readFileContent(file.name, file.generation, function(rawContent) {
       console.log(file.name, rawContent)
       const buildFileJsonContent = JSON.parse(rawContent)
 
@@ -304,6 +312,7 @@ exports.onFolderEventSendSlackNotification = function(event, callback) {
       if (file.name.startsWith(ciInProgressFolder + "/")) {
         notifyOf(BUILD_STATE.IN_PROGRESS)
       } else if (file.name.startsWith(ciSuccessFolder + "/")) {
+        console.log("slack-success")
         notifyOf(BUILD_STATE.SUCCESS)
       } else if (file.name.startsWith(ciFailureFolder + "/")) {
         notifyOf(BUILD_STATE.FAILURE)
