@@ -16,7 +16,7 @@ Goals:
   intended to be push-notification friendly: emoji represent important aspects
   of a build result.
 
-  Of note, this build has no classic "web interface" - the interface is
+  Of note, this build has no classic "web interface" - the user interface is
   notification systems (like slack), which naturally allow humans to track
   a build through its various states.
 
