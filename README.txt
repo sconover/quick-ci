@@ -1,24 +1,37 @@
-Goals, now:
+raw-ci
 
-- Speed is the #1 feature
-- Annotate a GH commit with status information as quickly as possible
-- Simple, even simplistic: bash scripts + GCP-hosted functions/storage. Your daemon is something like screen/tmux. Like fixing a bicycle (vs a car).
-- New, arbitrarily different builds are easy to set up
-- One click to see build output: build logs are available via the web, linked up in notifications / GH status detail
-- Decent notification options (slack etc)
-- Aimed at hermetic build environments (like bazel provides), where output can be reused across builds with a high degree of confidence
+Goals:
 
-Goals, later:
-- Multi-worker: Use sha files in gcs as the basis of a lease,
-  Use gcs write preconditions to ensure only one worker owns a
-  given sha at any given time. Renew lease every N seconds (15?)
-  and other workers forcibly take over a sha at ~120s.
-- Some docs around making a git-based build workflow based on this system
+- Speed is the #1 feature.
+  Annotate a GH commit with status information as quickly as possible.
+
+- Simple, even simplistic: bash scripts + GCP-hosted functions/storage.
+  Your worker daemon is something you run, like screen/tmux.
+  New, arbitrarily different builds are easy to set up.
+
+- Build logs are available via the web, linked up in notifications
+  and Github commit status detail messages.
+
+- Slack notifications out of the box, with message formatting capabilities
+  intended to be push-notification friendly: emoji represent important aspects
+  of a build result.
+
+  Of note, this build has no classic "web interface" - the interface is
+  notification systems (like slack), which naturally allow humans to track
+  a build through its various states.
+
+- Aimed at hermetic build environments (like bazel provides), where output
+  can be reused across builds with a high degree of confidence. These
+  builds have the potential to run very, very quickly.
+
+TODO: if anyone else wants to use this, I should make a better/easier
+install capability, and improve the setup experience overall.
+Please get in contact.
 
 
-TODO: if anyone else wants to use this, make a better/easier install capability,
-and improve the setup experience overall.
 
+===============================
+Notes
 
 = Setup =
 
