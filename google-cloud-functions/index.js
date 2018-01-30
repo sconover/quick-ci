@@ -6,6 +6,7 @@ const Storage = require('@google-cloud/storage')
 
 const config = require('./config')
 
+// load settings from the config.json which was deployed alongside this script
 const BUCKET = config.get('BUCKET')
 const GCP_PROJECT = config.get('GCP_PROJECT')
 const GITHUB_ACCESS_TOKEN = config.get('GITHUB_ACCESS_TOKEN')
@@ -59,13 +60,27 @@ function fileUrl(gitShaFilePath) {
   return "gs://" + BUCKET + "/" + gitShaFilePath
 }
 
+/**
+ * Cloud function intended to be http-triggerable, which is
+ * meant to be invoked by a Github webhook
+ * (in a Github project, see Settings -> Webhooks)
+ *
+ * It:
+ * - extracts important information about the git commit from the webhook request payload
+ * - saves this information as the body of a build file
+ * - names the build file after the git sha in question
+ * - saves this build file to an "inbox" folder in the bucket.
+ *   - the presence of a sha file in this folder implies that it is a build we desire to run
+ * - finally, publishes a message out to this build's pubsub topic,
+ *   which signals to the workers that a new build is ready/waiting.
+ */
 exports.onGithubPushTriggerNewBuild = function(httpRequest, httpResponse) {
   console.log("onGithubPushTriggerNewBuild", httpRequest.body)
   const gitSha = httpRequest.body.after
   const gitShaFilePath = ciInboxFolder + "/" + gitSha
   const fileContents = JSON.stringify({
     "githubRepoFullName": httpRequest.body.repository.full_name,
-    "githubPushWebhookTimestampMillis": new Date().getTime(),
+    "githubPushWebhookTimestampMillis": new Date().getTime(), // note: other reported build times are all relative to this github "entrypoint"
     "headCommitMessage": httpRequest.body.head_commit.message,
     "headCommiterUsername": httpRequest.body.head_commit.committer.username,
     "gitRef": httpRequest.body.ref,
@@ -85,6 +100,12 @@ function buildLogExternalUrl(gitSha) {
   return "https://storage.googleapis.com/" + BUCKET + "/" + buildLogFolder + "/" + gitSha + ".log"
 }
 
+// Using the github api, change the status of a commit. This is what
+// causes the Github UI to display a green success check, yellow in-progress dot,
+// or red X, next to a commit. If the commit is part of a pull request,
+// it factors into what makes the merge button go green in the PR.
+//
+// see https://developer.github.com/v3/repos/statuses/
 function httpPostGitShaStatusToGithub(
   githubRepoFullName,
   gitCommitSha,
@@ -132,6 +153,12 @@ function secondsSinceReferenceTime(referenceTimeMillis) {
   return "" + Math.round(Number((new Date().getTime()-referenceTimeMillis)/1000)) + "s"
 }
 
+/**
+ * Cloud function that should fire whenever a change is made to the gcs bucket
+ * that contains all build state. Based on what folder the file in question
+ * is being placed in, this function will update the status of the corresponding
+ * commit in Github to pending, success, or failure.
+ */
 exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
   console.log("onFolderEventUpdateGithubCommitStatus", event)
   const file = event.data;
@@ -185,6 +212,11 @@ exports.onFolderEventUpdateGithubCommitStatus = function(event, callback) {
   }
 }
 
+// Post a message to the slack webhook, the url for which
+// was provided in config.json
+//
+// see http://slackapi.github.io/node-slack-sdk/
+// see https://cloud.google.com/container-builder/docs/configure-third-party-notifications
 function sendSlackNotification(messageText, callback) {
   console.log("sendSlackNotification", messageText)
   const IncomingWebhook = require('@slack/client').IncomingWebhook
@@ -193,6 +225,10 @@ function sendSlackNotification(messageText, callback) {
   webhook.send(messageText, callback)
 }
 
+// simple template interpolation
+// template: 'a {{color}} cat'
+// value map: {color: 'red'}
+// ...yields: 'a red cat'
 function interpolate(template, valueMap) {
   return template.replace(/\{\{(.+?)\}\}/g,
     function(original, key) {
@@ -293,7 +329,11 @@ function sendCommitStatusSlackNotification(currentBuildState, buildFileJsonConte
   sendSlackNotification(messageText, callback)
 }
 
-
+/**
+ * Cloud function that reacts to changes in the build bucket. The contents of the
+ * build file in question are read, and used to construct and send a slack notification
+ * message.
+ */
 exports.onFolderEventSendSlackNotification = function(event, callback) {
   console.log("onFolderEventSendSlackNotification", event)
   const file = event.data;

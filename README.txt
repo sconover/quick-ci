@@ -16,6 +16,9 @@ Goals, later:
 - Some docs around making a git-based build workflow based on this system
 
 
+TODO: if anyone else wants to use this, make a better/easier install capability,
+and improve the setup experience overall.
+
 
 = Setup =
 
