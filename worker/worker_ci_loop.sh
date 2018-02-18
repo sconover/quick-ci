@@ -97,6 +97,10 @@ do
   # and so we can demonstrate that the worker is properly operating by printing
   # a "." to the console.
   set +e
+
+  # use of gcloud tools can result in all inodes being used up https://groups.google.com/forum/#!topic/google-appengine/8jY242lvAHk
+  find ~/.config/gcloud/logs -mindepth 1 -mtime +2 -delete
+
   next_inbox_git_sha_path=$(timeout 10 gcloud alpha pubsub subscriptions pull "$worker_subscription" --auto-ack --format='csv[no-heading](DATA)' 2>/dev/null)
   set -e
 
