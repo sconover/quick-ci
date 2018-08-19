@@ -25,6 +25,9 @@ const githubStatusContext = "raw-ci/" + buildName
 const notifyNextTopicOnSuccess = config.get('NOTIFY_NEXT_TOPIC_ON_SUCCESS')
 const notificationMessageSettings = config.get('NOTIFICATION_MESSAGE_SETTINGS')
 
+const workerInstanceZone = config.get('WORKER_INSTANCE_ZONE')
+const workerInstanceName = config.get('WORKER_INSTANCE_NAME')
+
 const GITHUB_COMMIT_STATE_PENDING = "pending"
 const GITHUB_COMMIT_STATE_SUCCESS = "success"
 const GITHUB_COMMIT_STATE_FAILURE = "failure"
@@ -94,6 +97,19 @@ exports.onGithubPushTriggerNewBuild = function(httpRequest, httpResponse) {
   publishMessageToThisTopic(fileUrl(gitShaFilePath), function() {
     httpResponse.send(`bucket=${BUCKET} gitShaFilePath=${gitShaFilePath}`)
   })
+}
+
+const http = require('http')
+const Compute = require('@google-cloud/compute')
+const compute = Compute()
+exports.onPubSubActivityStartComputeInstance = function(event, callback) {
+  console.log("Detected pubsub event, attempting to start build worker...")
+  const zone = compute.zone(workerInstanceZone)
+  const vm = zone.vm(workerInstanceName)
+  vm.start(function(err, operation, apiResponse) {
+      console.log(`Starting Google Compute Engine Instance: zone=${workerInstanceZone} name=${workerInstanceName}`)
+  });
+  callback()
 }
 
 function buildLogExternalUrl(gitSha) {

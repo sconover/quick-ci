@@ -154,6 +154,7 @@ do
   # This script should be made executable, and provided as the last argument
   # in the incantation which starts this build loop.
   echo "RUNNING: 'time GIT_SHA=$git_sha bash -c \"date; $command_to_run\"'"
+  echo "RUNNING: 'time GIT_SHA=$git_sha bash -c \"date; $command_to_run\"'" > /tmp/$worker_id
 
   set +e
 

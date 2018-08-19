@@ -20,5 +20,7 @@
       {"startsWith": "refs/heads/master", "emojiShortcode": "tophat"},
       {"startsWith": "", "emojiShortcode": "rainbow"}
     ]
-  }
+  },
+  "WORKER_INSTANCE_ZONE": "worker-compute-instance-zone",
+  "WORKER_INSTANCE_NAME": "worker-compute-instance-name"
 }
